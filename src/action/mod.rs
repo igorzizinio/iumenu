@@ -1,4 +1,4 @@
-use crate::freedesktop::desktop_entry::DesktopApp;
+use crate::app::DesktopApp;
 
 pub fn run_command(command: &String) {
     let mut parts: Vec<&str> = command.split_whitespace().collect();

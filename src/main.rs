@@ -4,16 +4,25 @@ use std::{
 };
 
 use action::click_app;
+
+#[cfg(not(windows))]
 use freedesktop::desktop_entry::get_available_apps;
+
+#[cfg(windows)]
+use windows::app_finder::get_available_apps;
 
 use gtk::{prelude::*, IconSize, Image, Label, ListBox, ListBoxRow, ScrolledWindow, SearchEntry};
 
 mod action;
+mod app;
 mod args;
 mod config;
 mod freedesktop;
 mod style;
 mod util;
+
+#[cfg(windows)]
+mod windows;
 
 const APP_ID: &str = "com.igorunderplayer.IUMenu";
 

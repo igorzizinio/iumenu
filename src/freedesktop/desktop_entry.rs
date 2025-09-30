@@ -90,14 +90,15 @@ pub fn read_desktop_files(path: &PathBuf) -> HashMap<String, DesktopApp> {
                 if path.extension().map(|e| e == "desktop").unwrap_or(false) {
                     if let Some(app_name) = path.file_stem() {
                         let id = app_name.to_string_lossy().into_owned();
-                        let app_data =
-                            parse_desktop_file(path.to_str().unwrap(), id.clone()).unwrap();
+                        if let Some(app_data) = parse_desktop_file(path.to_str().unwrap(), id.clone()) {
+                            if should_show(&app_data, &current_desktop) {
+                                continue;
+                            }
 
-                        if should_show(&app_data, &current_desktop) {
-                            continue;
+                            apps.insert(id, app_data);
+                        } {
+                            println!("{} ignored due to error reading desktop file.");
                         }
-
-                        apps.insert(id, app_data);
                     }
                 }
             }
@@ -115,8 +116,6 @@ pub fn should_show(app_data: &DesktopApp, current_desktop: &Option<String>) -> b
 pub fn is_in_show_in(show_in: &String, current_desktop: &Option<String>) -> bool {
     let only_show_in: Vec<&str> = show_in.split(';').filter(|s| !s.is_empty()).collect();
 
-    println!("OnlyShowIn: {:?}", only_show_in);
-
     if only_show_in.is_empty() {
         return true;
     }
@@ -130,7 +129,10 @@ pub fn is_in_show_in(show_in: &String, current_desktop: &Option<String>) -> bool
 
 pub fn parse_desktop_file(path: &str, id: String) -> Option<DesktopApp> {
     let file_content = fs::read_to_string(&path).expect(&format!("Cant read file: {}", path));
-    let ini = Ini::load_from_str(&file_content).expect("Cant read ini file");
+    let ini = match Ini::load_from_str(&file_content) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
 
     if let Some(section) = ini.section(Some("Desktop Entry")) {
         let name = section.get("Name").unwrap_or("Unknown").to_string();

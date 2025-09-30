@@ -59,13 +59,16 @@ fn parse_registry_app(parent_key: &RegKey, subkey_name: &str) -> Result<DesktopA
     let install_location: String = subkey.get_value("InstallLocation").unwrap_or_default();
     let publisher: String = subkey.get_value("Publisher").unwrap_or_default();
     
-    // Try to get the executable path
-    let exec = if let Ok(uninstall_string) = subkey.get_value::<String, _>("DisplayIcon") {
-        // DisplayIcon often contains the exe path
-        clean_windows_path(&uninstall_string)
+    // Try to get the executable path from various registry keys
+    let exec = if !display_icon.is_empty() && display_icon.to_lowercase().ends_with(".exe") {
+        // DisplayIcon sometimes contains the exe path
+        clean_windows_path(&display_icon)
     } else if let Ok(uninstall_string) = subkey.get_value::<String, _>("UninstallString") {
-        // Extract exe from uninstall string as fallback
+        // Extract exe from uninstall string
         clean_windows_path(&uninstall_string)
+    } else if let Ok(display_icon_val) = subkey.get_value::<String, _>("DisplayIcon") {
+        // Try DisplayIcon as fallback
+        clean_windows_path(&display_icon_val)
     } else if !install_location.is_empty() {
         install_location.clone()
     } else {

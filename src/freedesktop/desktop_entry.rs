@@ -97,7 +97,7 @@ pub fn read_desktop_files(path: &PathBuf) -> HashMap<String, DesktopApp> {
 
                             apps.insert(id, app_data);
                         } {
-                            println!("{} ignored due to error reading desktop file.");
+                            println!("{} ignored due to error reading desktop file.", path.to_str().unwrap_or("app"));
                         }
                     }
                 }

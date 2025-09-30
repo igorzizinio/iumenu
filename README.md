@@ -9,7 +9,7 @@ A simple, easy-to-use, GTK-based app launcher and menu written in Rust!
 - **GTK-based**: Designed with GTK4 for a modern and responsive interface.
 -  **Rust-based**: Powered by the Rust programming language for safety and performance.
 - **Lightweight**: Minimal resource usage, focusing on performance.
-- **Cross-platform**: Aiming to support Linux, macOS, and Windows.
+- **Cross-platform**: Supports Linux, macOS, and Windows with platform-specific app discovery.
 
 ---
 
@@ -67,6 +67,28 @@ Setting up GTK4 on Windows requires additional steps. Follow the [GTK4 installat
    ```sh
    cargo install --path .
    ```
+
+---
+
+## Platform Support
+
+IUMENU provides platform-specific application discovery:
+
+### Linux
+- Searches `.desktop` files in:
+  - `/usr/share/applications` (system-wide applications)
+  - `/usr/local/share/applications` (locally installed applications)
+  - `~/.local/share/applications` (user-specific applications)
+
+### Windows
+- Discovers applications from:
+  - Windows Registry uninstall entries (HKEY_LOCAL_MACHINE and HKEY_CURRENT_USER)
+  - Start Menu shortcuts in `%ProgramData%\Microsoft\Windows\Start Menu\Programs`
+  - User Start Menu shortcuts in `%APPDATA%\Microsoft\Windows\Start Menu\Programs`
+
+### macOS
+- Currently uses the Linux/FreeDesktop implementation
+- macOS-specific app discovery is planned for future updates
 
 ---
 

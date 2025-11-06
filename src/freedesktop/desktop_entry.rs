@@ -51,9 +51,9 @@ impl DesktopApp {
 pub fn get_available_apps() -> HashMap<String, DesktopApp> {
     let mut apps = HashMap::new();
 
-    apps.extend(get_system_apps().into_iter());
-    apps.extend(get_local_system_apps().into_iter());
-    apps.extend(get_user_apps().into_iter());
+    apps.extend(get_system_apps());
+    apps.extend(get_local_system_apps());
+    apps.extend(get_user_apps());
 
     apps
 }
@@ -76,7 +76,7 @@ pub fn get_user_apps() -> HashMap<String, DesktopApp> {
 
 pub fn read_desktop_files(path: &PathBuf) -> HashMap<String, DesktopApp> {
     let mut apps = HashMap::new();
-    let dir = Path::new(&path);
+    let dir = Path::new(path);
     let current_desktop = if let Ok(desktop) = std::env::var("XDG_CURRENT_DESKTOP") {
         Some(desktop)
     } else {
@@ -90,14 +90,19 @@ pub fn read_desktop_files(path: &PathBuf) -> HashMap<String, DesktopApp> {
                 if path.extension().map(|e| e == "desktop").unwrap_or(false) {
                     if let Some(app_name) = path.file_stem() {
                         let id = app_name.to_string_lossy().into_owned();
-                        if let Some(app_data) = parse_desktop_file(path.to_str().unwrap(), id.clone()) {
+                        if let Some(app_data) =
+                            parse_desktop_file(path.to_str().unwrap(), id.clone())
+                        {
                             if should_show(&app_data, &current_desktop) {
                                 continue;
                             }
 
                             apps.insert(id, app_data);
-                        } {
-                            println!("{} ignored due to error reading desktop file.", path.to_str().unwrap_or("app"));
+                        } else {
+                            println!(
+                                "{} ignored due to error reading desktop file.",
+                                path.to_str().unwrap_or("app")
+                            );
                         }
                     }
                 }
@@ -113,7 +118,7 @@ pub fn should_show(app_data: &DesktopApp, current_desktop: &Option<String>) -> b
         || !is_in_show_in(&app_data.only_show_in, current_desktop)
 }
 
-pub fn is_in_show_in(show_in: &String, current_desktop: &Option<String>) -> bool {
+pub fn is_in_show_in(show_in: &str, current_desktop: &Option<String>) -> bool {
     let only_show_in: Vec<&str> = show_in.split(';').filter(|s| !s.is_empty()).collect();
 
     if only_show_in.is_empty() {
@@ -128,7 +133,7 @@ pub fn is_in_show_in(show_in: &String, current_desktop: &Option<String>) -> bool
 }
 
 pub fn parse_desktop_file(path: &str, id: String) -> Option<DesktopApp> {
-    let file_content = fs::read_to_string(&path).expect(&format!("Cant read file: {}", path));
+    let file_content = fs::read_to_string(path).expect(&format!("Cant read file: {}", path));
     let ini = match Ini::load_from_str(&file_content) {
         Ok(v) => v,
         Err(_) => return None,
@@ -142,7 +147,7 @@ pub fn parse_desktop_file(path: &str, id: String) -> Option<DesktopApp> {
         let categories = section.get("Categories").unwrap_or("Unknown").to_string();
         let keywords = section.get("Keywords").unwrap_or("").to_string();
         let only_show_in = section.get("OnlyShowIn").unwrap_or("").to_string();
-        let no_display = section.get("NoDisplay").unwrap_or("").to_string() == "true";
+        let no_display = section.get("NoDisplay").unwrap_or_default() == "true";
 
         let exec_raw = section.get("Exec").unwrap_or("").to_string();
 

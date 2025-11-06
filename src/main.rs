@@ -1,7 +1,4 @@
-use std::{
-    process,
-    sync::{Arc, Mutex},
-};
+use std::process;
 
 use action::click_app;
 use freedesktop::desktop_entry::get_available_apps;
@@ -21,18 +18,18 @@ fn main() {
     gtk::init().expect("Failed to initialize GTK.");
     let args = args::parse_arguments();
 
-    let sys_apps = get_available_apps();
-    let mut entries: Vec<String> = sys_apps.iter().map(|(id, _)| id.clone()).collect();
-    entries.sort_by(|a, b| {
-        let app_a = &sys_apps[a];
-        let app_b = &sys_apps[b];
-        app_a.name.to_lowercase().cmp(&app_b.name.to_lowercase())
-    });
-
     let app = gtk::Application::builder().application_id(APP_ID).build();
 
     app.connect_activate(move |app| {
         let config = config::load_from_file(&args.config);
+
+        let sys_apps = get_available_apps();
+        let mut entries: Vec<String> = sys_apps.iter().map(|(id, _)| id.clone()).collect();
+        entries.sort_by(|a, b| {
+            let app_a = &sys_apps[a];
+            let app_b = &sys_apps[b];
+            app_a.name.to_lowercase().cmp(&app_b.name.to_lowercase())
+        });
 
         let window = gtk::ApplicationWindow::new(app);
         let window_config = config.window.unwrap_or(config::WindowConfig::default());
@@ -49,7 +46,7 @@ fn main() {
         window.set_opacity(style_config.opacity.unwrap_or(1.0));
 
         if let Some(path) = style_config.path {
-            style::apply_custom_css(&path.to_str().unwrap());
+            style::apply_custom_css(path.to_str().unwrap());
         }
 
         let search_entry = SearchEntry::new();
@@ -58,6 +55,7 @@ fn main() {
         search_entry.set_height_request(72);
 
         search_entry.add_css_class("search-entry");
+        search_entry.grab_focus();
 
         let main_grid = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -90,6 +88,7 @@ fn main() {
 
                 let label = Label::new(Some(&app.name));
                 let icon = gtk::Image::from_icon_name(&app.icon);
+                icon.add_css_class("entry-icon");
 
                 unsafe {
                     row.set_data("app-id", app.id.to_owned());
@@ -140,7 +139,7 @@ fn main() {
                 let query = entry.text().to_lowercase();
 
                 for row in &rows {
-                    let mut id = String::from("");
+                    let id: String;
                     unsafe {
                         id = row.data::<String>("app-id").unwrap().as_ref().to_owned();
                     }

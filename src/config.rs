@@ -64,7 +64,12 @@ impl Default for StyleConfig {
     }
 }
 
-pub fn load_from_file(path: &PathBuf) -> Config {
+pub fn load_from_file(path: &Option<PathBuf>) -> Config {
+    if path.is_none() {
+        return Config::default();
+    }
+
+    let path = path.as_ref().unwrap();
     let contents = match fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => {

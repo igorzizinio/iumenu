@@ -11,3 +11,4 @@ toml = "0.8.19"
 dirs = "5.0.1"
 shellexpand = "3.1.0"
 gtk = { version = "0.9.4", package = "gtk4", features = ["v4_16"] }
+tokio = { version = "1.42", features = ["rt-multi-thread", "net", "io-util", "sync", "macros", "time"] }

@@ -3,20 +3,38 @@ use std::process;
 use action::click_app;
 use freedesktop::desktop_entry::get_available_apps;
 
-use gtk::{prelude::*, IconSize, Image, Label, ListBox, ListBoxRow, ScrolledWindow, SearchEntry};
+use gtk::{prelude::*, Label, ListBox, ListBoxRow, ScrolledWindow, SearchEntry};
 
 mod action;
 mod args;
 mod config;
 mod freedesktop;
+mod ipc;
 mod style;
 mod util;
 
 const APP_ID: &str = "com.igorunderplayer.IUMenu";
 
 fn main() {
-    gtk::init().expect("Failed to initialize GTK.");
     let args = args::parse_arguments();
+
+    // Client mode: send toggle command to server
+    if args.toggle {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        match rt.block_on(ipc::send_toggle_command()) {
+            Ok(_) => {
+                println!("Toggle command sent successfully");
+                process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                process::exit(1);
+            }
+        }
+    }
+
+    // Server mode: run the GTK application with IPC
+    gtk::init().expect("Failed to initialize GTK.");
 
     let app = gtk::Application::builder().application_id(APP_ID).build();
 
@@ -55,7 +73,6 @@ fn main() {
         search_entry.set_height_request(72);
 
         search_entry.add_css_class("search-entry");
-        search_entry.grab_focus();
 
         let main_grid = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -106,14 +123,17 @@ fn main() {
 
         list_box.select_row(Some(&rows[0]));
 
-        let mut last_active: String = String::default();
+        let last_active: String = String::default();
         list_box.connect_row_activated({
             let app = app.clone();
             let sys_apps = sys_apps.clone();
+            let window = window.clone();
+            let search_entry = search_entry.clone();
+            let server_mode = args.server;
             let last_active = std::sync::Arc::new(std::sync::Mutex::new(last_active));
             move |_list_box, row| {
                 println!("escolheu algo");
-                let mut id = String::from("");
+                let id;
 
                 unsafe {
                     id = row.data::<String>("app-id").unwrap().as_ref().to_owned();
@@ -124,7 +144,13 @@ fn main() {
                 if *last_active == id {
                     let app_data = sys_apps.get(&id).unwrap();
                     click_app(app_data);
-                    app.quit();
+
+                    if server_mode {
+                        search_entry.set_text("");
+                        window.set_visible(false);
+                    } else {
+                        app.quit();
+                    }
                 }
 
                 *last_active = id.clone();
@@ -165,7 +191,9 @@ fn main() {
             let list_box = list_box.clone();
             let rows = rows.clone();
             let app = app.clone();
+            let window = window.clone();
             let search_entry = search_entry.clone();
+            let server_mode = args.server;
             move |_, keyval, keycode, _state| {
                 println!("Key pressed: {:?}, Keycode: {:?}", keyval, keycode);
                 let visible_rows: Vec<ListBoxRow> = rows
@@ -181,7 +209,12 @@ fn main() {
 
                 match keyval {
                     gtk::gdk::Key::Escape => {
-                        app.quit();
+                        if server_mode {
+                            search_entry.set_text("");
+                            window.set_visible(false);
+                        } else {
+                            app.quit();
+                        }
                         gtk::glib::Propagation::Proceed
                     }
                     gtk::gdk::Key::Return => {
@@ -196,7 +229,13 @@ fn main() {
 
                             let app_data = sys_apps.get(&id).unwrap();
                             click_app(app_data);
-                            app.quit();
+
+                            if server_mode {
+                                search_entry.set_text("");
+                                window.set_visible(false);
+                            } else {
+                                app.quit();
+                            }
                         }
                         gtk::glib::Propagation::Stop
                     }
@@ -244,11 +283,83 @@ fn main() {
         search_entry.add_controller(controller);
         window.set_child(Some(&main_grid));
 
-        window.present();
+        // Don't show window initially in server mode
+        if !args.server {
+            window.present();
+            search_entry.grab_focus();
+        } else {
+            // Setup IPC server for server mode
+            use std::sync::mpsc;
 
-        window.connect_hide(|window| {
-            window.close();
-            process::exit(0);
+            let (tx, rx) = mpsc::channel::<()>();
+            let window_weak = window.downgrade();
+            let search_entry_weak = search_entry.downgrade();
+
+            // Handle toggle messages on GTK main thread
+            gtk::glib::spawn_future_local(async move {
+                loop {
+                    // Check for messages from IPC server
+                    if let Ok(_) = rx.try_recv() {
+                        if let (Some(window), Some(search_entry)) =
+                            (window_weak.upgrade(), search_entry_weak.upgrade())
+                        {
+                            if window.is_visible() {
+                                search_entry.set_text("");
+                                window.set_visible(false);
+                            } else {
+                                window.present();
+                                search_entry.grab_focus();
+                            }
+                        }
+                    }
+                    // Small delay to avoid busy-waiting
+                    gtk::glib::timeout_future(std::time::Duration::from_millis(50)).await;
+                }
+            });
+
+            // Start IPC server in a separate thread
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    if let Err(e) = ipc::start_ipc_server(move || {
+                        let _ = tx.send(());
+                    })
+                    .await
+                    {
+                        eprintln!("Failed to start IPC server: {}", e);
+                    }
+
+                    // Keep the runtime alive
+                    loop {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    }
+                });
+            });
+        }
+
+        window.connect_hide({
+            let server_mode = args.server;
+            move |window| {
+                if !server_mode {
+                    window.close();
+                    process::exit(0);
+                }
+                // In server mode, just hide the window instead of closing
+            }
+        });
+
+        window.connect_close_request({
+            let server_mode = args.server;
+            move |window| {
+                if server_mode {
+                    // In server mode, hide instead of closing
+                    window.set_visible(false);
+                    gtk::glib::Propagation::Stop
+                } else {
+                    // In normal mode, allow close
+                    gtk::glib::Propagation::Proceed
+                }
+            }
         });
     });
 

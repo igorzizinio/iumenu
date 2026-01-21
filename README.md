@@ -80,6 +80,22 @@ iumenu
 iumenu --help # Show help menu
 ```
 
+### Server mode
+
+To run in server mode, you must run the server using this command:
+
+```sh
+iumenu -c ~/.config/iumenu/config.toml --server
+```
+
+To bring the **IUMENU** to usage, you wanna run this command, or just put to run in a keyboard shortcut:
+
+```sh
+iumenu --toggle
+```
+
+> **Tip:** You can use it in Hyprland: inside the hyprland.conf file by running the server as a 'exec-once' command, and on the 'bind' command the toggle.
+
 ---
 
 ## Contributing

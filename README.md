@@ -43,15 +43,14 @@ Refer to the [GTK4 installation guide for Linux](https://gtk-rs.org/gtk4-rs/stab
 
 #### macOS
 
+> [!WARNING]
+> I didn't tested `iumenu` in macOS environments. So it should not work very well.
+
 Install GTK4 via Homebrew:
 
 ```sh
 brew install gtk4
 ```
-
-#### Windows
-
-Setting up GTK4 on Windows requires additional steps. Follow the [GTK4 installation guide for Windows](https://gtk-rs.org/gtk4-rs/stable/latest/book/installation_windows.html) for detailed instructions.
 
 ---
 

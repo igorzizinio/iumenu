@@ -13,6 +13,10 @@ pub struct Args {
     /// Toggle the launcher window (client mode)
     #[arg(long, default_value = "false")]
     pub toggle: bool,
+
+    /// Reload the app list (client mode)
+    #[arg(long, default_value = "false")]
+    pub reload_apps: bool,
 }
 
 pub fn parse_arguments() -> Args {

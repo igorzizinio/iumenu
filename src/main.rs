@@ -33,6 +33,21 @@ fn main() {
         }
     }
 
+    // Client mode: send reload command to server
+    if args.reload_apps {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        match rt.block_on(ipc::send_reload_command()) {
+            Ok(_) => {
+                println!("Reload command sent successfully");
+                process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                process::exit(1);
+            }
+        }
+    }
+
     // Server mode: run the GTK application with IPC
     gtk::init().expect("Failed to initialize GTK.");
 
@@ -158,27 +173,49 @@ fn main() {
         });
 
         search_entry.connect_changed({
-            let rows = rows.clone();
-            let sys_apps = sys_apps.clone();
             let list_box = list_box.clone();
+            let sys_apps = sys_apps.clone();
             move |entry| {
                 let query = entry.text().to_lowercase();
 
-                for row in &rows {
-                    let id: String;
-                    unsafe {
-                        id = row.data::<String>("app-id").unwrap().as_ref().to_owned();
+                // Iterate through all current children of the list_box
+                let mut child = list_box.first_child();
+                let mut first_visible: Option<ListBoxRow> = None;
+
+                while let Some(current) = child {
+                    let next = current.next_sibling();
+
+                    if let Ok(row) = current.downcast::<ListBoxRow>() {
+                        // Get app data from row
+                        let id: String;
+                        unsafe {
+                            if let Some(app_id) = row.data::<String>("app-id") {
+                                id = app_id.as_ref().to_owned();
+                            } else {
+                                child = next;
+                                continue;
+                            }
+                        }
+
+                        // Get app info and check visibility
+                        if let Some(app) = sys_apps.get(&id) {
+                            let should_be_visible = app.name.to_lowercase().contains(&query)
+                                || app.keywords.to_lowercase().contains(&query);
+                            row.set_visible(should_be_visible);
+
+                            if should_be_visible && first_visible.is_none() {
+                                first_visible = Some(row.clone());
+                            }
+                        }
                     }
 
-                    if let Some(app) = sys_apps.get(&id) {
-                        row.set_visible(
-                            app.name.to_lowercase().contains(&query)
-                                || app.keywords.to_lowercase().contains(&query),
-                        );
-                    }
+                    child = next;
                 }
 
-                list_box.select_row(rows.iter().find(|p| p.is_visible()));
+                // Select first visible row
+                if let Some(row) = first_visible {
+                    list_box.select_row(Some(&row));
+                }
             }
         });
 
@@ -291,24 +328,92 @@ fn main() {
             // Setup IPC server for server mode
             use std::sync::mpsc;
 
-            let (tx, rx) = mpsc::channel::<()>();
+            #[derive(Debug, Clone)]
+            enum IpcMessage {
+                Toggle,
+                Reload,
+            }
+
+            let (tx, rx) = mpsc::channel::<IpcMessage>();
             let window_weak = window.downgrade();
             let search_entry_weak = search_entry.downgrade();
+            let list_box_weak = list_box.downgrade();
 
-            // Handle toggle messages on GTK main thread
+            // Handle IPC messages on GTK main thread
             gtk::glib::spawn_future_local(async move {
                 loop {
                     // Check for messages from IPC server
-                    if let Ok(_) = rx.try_recv() {
-                        if let (Some(window), Some(search_entry)) =
-                            (window_weak.upgrade(), search_entry_weak.upgrade())
-                        {
-                            if window.is_visible() {
-                                search_entry.set_text("");
-                                window.set_visible(false);
-                            } else {
-                                window.present();
-                                search_entry.grab_focus();
+                    if let Ok(msg) = rx.try_recv() {
+                        match msg {
+                            IpcMessage::Toggle => {
+                                if let (Some(window), Some(search_entry)) =
+                                    (window_weak.upgrade(), search_entry_weak.upgrade())
+                                {
+                                    if window.is_visible() {
+                                        search_entry.set_text("");
+                                        window.set_visible(false);
+                                    } else {
+                                        window.present();
+                                        search_entry.grab_focus();
+                                    }
+                                }
+                            }
+                            IpcMessage::Reload => {
+                                if let Some(list_box) = list_box_weak.upgrade() {
+                                    // Clear existing items
+                                    while let Some(child) = list_box.first_child() {
+                                        list_box.remove(&child);
+                                    }
+
+                                    // Reload apps
+                                    let sys_apps = get_available_apps();
+                                    let mut entries: Vec<String> =
+                                        sys_apps.iter().map(|(id, _)| id.clone()).collect();
+                                    entries.sort_by(|a, b| {
+                                        let app_a = &sys_apps[a];
+                                        let app_b = &sys_apps[b];
+                                        app_a.name.to_lowercase().cmp(&app_b.name.to_lowercase())
+                                    });
+
+                                    // Recreate rows
+                                    let new_rows: Vec<ListBoxRow> = entries
+                                        .iter()
+                                        .map(|app_id| {
+                                            let app = &sys_apps[app_id];
+                                            let row = gtk::ListBoxRow::new();
+
+                                            let row_box =
+                                                gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                                            row_box.set_margin_start(8);
+                                            row_box.set_margin_end(8);
+
+                                            row.add_css_class("entry");
+                                            row.set_height_request(48);
+
+                                            let label = Label::new(Some(&app.name));
+                                            let icon = gtk::Image::from_icon_name(&app.icon);
+                                            icon.add_css_class("entry-icon");
+
+                                            unsafe {
+                                                row.set_data("app-id", app.id.to_owned());
+                                            }
+
+                                            row_box.append(&icon);
+                                            row_box.append(&label);
+                                            row.set_child(Some(&row_box));
+
+                                            list_box.append(&row);
+
+                                            row
+                                        })
+                                        .collect();
+
+                                    if !new_rows.is_empty() {
+                                        list_box.select_row(Some(&new_rows[0]));
+                                    }
+
+                                    println!("App list reloaded successfully");
+                                }
                             }
                         }
                     }
@@ -321,9 +426,16 @@ fn main() {
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
-                    if let Err(e) = ipc::start_ipc_server(move || {
-                        let _ = tx.send(());
-                    })
+                    let tx_toggle = tx.clone();
+                    let tx_reload = tx;
+                    if let Err(e) = ipc::start_ipc_server(
+                        move || {
+                            let _ = tx_toggle.send(IpcMessage::Toggle);
+                        },
+                        move || {
+                            let _ = tx_reload.send(IpcMessage::Reload);
+                        },
+                    )
                     .await
                     {
                         eprintln!("Failed to start IPC server: {}", e);
